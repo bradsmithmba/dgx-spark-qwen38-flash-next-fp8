@@ -547,7 +547,7 @@ even if the kernel had accepted the dtype. Both points turned out to be about a 
 path rather than a hardware ceiling.
 
 **The pointer.** Forum user jahnclawdmonet replied on NVIDIA Developer Forums thread 382435 (the
-thread covering this build, listed in section 11) pointing at upstream sglang PR #36644, "[Qwen3.8]
+thread covering this build, listed in section 13) pointing at upstream sglang PR #36644, "[Qwen3.8]
 Fix FP8 KV cache support in QSA" (author LingZ315, open and unreviewed at the time it was applied
 here, stacked on PR #36497, already validated upstream on RTX 5090 and RTX PRO 6000 with the NVFP4
 checkpoint). The diff is 879 lines, Python only, touching `qsa/kernel.py`, `qsa/sparse_attn.py`,
