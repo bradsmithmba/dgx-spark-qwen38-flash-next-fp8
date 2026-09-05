@@ -539,7 +539,7 @@ discrete-GPU dashboard template.
   research pass and is listed in the sources below, but its own open question was never resolved
   by anyone, including this build. Left here for anyone following up.
 
-## 12. FP8 KV cache, revisited (2026-09-05)
+## 11. FP8 KV cache, revisited (2026-09-05)
 
 Section 4d and section 10 both recorded FP8 KV cache as failing outright on the SM121 QSA kernel,
 with the checkpoint's missing KV scale factors noted as a separate concern that would have mattered
@@ -547,7 +547,7 @@ even if the kernel had accepted the dtype. Both points turned out to be about a 
 path rather than a hardware ceiling.
 
 **The pointer.** Forum user jahnclawdmonet replied on NVIDIA Developer Forums thread 382435 (the
-thread covering this build, listed in section 13) pointing at upstream sglang PR #36644, "[Qwen3.8]
+thread covering this build, listed in section 12) pointing at upstream sglang PR #36644, "[Qwen3.8]
 Fix FP8 KV cache support in QSA" (author LingZ315, open and unreviewed at the time it was applied
 here, stacked on PR #36497, already validated upstream on RTX 5090 and RTX PRO 6000 with the NVFP4
 checkpoint). The diff is 879 lines, Python only, touching `qsa/kernel.py`, `qsa/sparse_attn.py`,
@@ -607,7 +607,7 @@ in this section was captured with a single benchmark client running alone: a mul
 (the "2 concurrent streams" and "4 concurrent streams" rows above) means multiple streams from one
 client, not multiple clients.
 
-## 13. Sources
+## 12. Sources
 
 - NVIDIA Developer Forums thread 381428, "Qwen3.8 Flash Next NVFP4 on 2x DGX Spark, full
   multimodal, 70 tok/s peak, 47 typical":
