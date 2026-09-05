@@ -28,12 +28,12 @@ docker run $DETACH_FLAG --rm --name sglang_node --network host --gpus all --ipc=
     --ep-size 2 \
     --dist-init-addr "$HEAD_IP":29511 --dist-timeout 600 \
     --quantization fp8 \
-    --kv-cache-dtype auto \
+    --kv-cache-dtype fp8_e4m3 \
     --page-size 64 \
     --speculative-algorithm NEXTN --speculative-num-steps 3 --speculative-eagle-topk 1 --speculative-num-draft-tokens 4 \
     --chunked-prefill-size 2048 \
     --max-running-requests 4 \
-    --context-length 65536 \
+    --context-length 131072 \
     --mem-fraction-static 0.90 \
     --cuda-graph-max-bs 4 --disable-cuda-graph-padding \
     --ple-offload-embedding \

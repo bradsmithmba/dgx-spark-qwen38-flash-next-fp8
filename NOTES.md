@@ -14,10 +14,10 @@ Five attempts on vLLM failed to reach a stable serving state for this model on t
 SGLang, on the fifth attempt, worked. The cluster has been serving continuously since 2026-09-04
 at 19:39 CDT (00:39 UTC on 2026-09-05) under a pair of systemd units, one per box, both restart-safe. Measured
 single-stream throughput is 36 to 41 tok/s (median 40.3), context is 65,536 tokens, and the KV
-cache is BF16 (FP8 KV is not possible on this GPU for this model, a hardware constraint rather
-than a tuning choice). That is roughly 15 to 21 percent slower than the community's best published
-NVFP4 numbers on the same hardware pair, at less than a quarter of the context length, in exchange
-for staying at 8-bit weights end to end.
+cache is BF16 (FP8 KV was believed not possible on this GPU for this model at the time this
+section was written: this was revised on 2026-09-05, see section 12). That is roughly 15 to 21
+percent slower than the community's best published NVFP4 numbers on the same hardware pair, at
+less than a quarter of the context length, in exchange for staying at 8-bit weights end to end.
 
 ## 2. Hardware and interconnect
 
@@ -190,7 +190,7 @@ the logs.
 | 6 | SGLang | TP2 only (no EP) | `ValueError: The output_size of gate's and up's weight = 320 is not divisible by weight quantization block_n = 128` | FP8 128-block quantization vs. tensor-parallel sharding arithmetic (see subsection below) | Add `--ep-size 2` |
 | 7 | SGLang | TP2/EP2, `NCCL_IB_GID_INDEX=3` pinned | `ibv_modify_qp failed with 61 No data available, on dev roceP2p1s0f1:1 ... local GID index 3, local GID ::` | GID index 3 exists only on `rocep1s0f1`, not its twin: pinning it breaks the expert-parallel NCCL communicator | Remove the `NCCL_IB_GID_INDEX` pin entirely, let NCCL auto-select |
 | 8 | SGLang | `--mem-fraction-static 0.80` | `Loaded weights leave no GPU memory for the KV cache under --mem-fraction-static=0.8. Raise --mem-fraction-static above 0.872 (minimum viable = 0.8714)` | Static weight footprint (about 94 GB main plus about 1.8 to 2.0 GB MTP draft) leaves too little of the roughly 119 GiB pool at 0.80 | Raise to `--mem-fraction-static 0.90` |
-| 9 | SGLang | `--kv-cache-dtype fp8_e4m3` | `ValueError: unsupported SM121 QSA call: expected BF16 D=256, 12:1 GQA, TP1 24Q/2KV or TP2 12Q/1KV, bs<=128, and selected KV<=2055` | SM121 QSA attention kernel on GB10 has a hardware/kernel-level BF16-only constraint for this model's attention shape | Use `--kv-cache-dtype auto` (BF16) |
+| 9 | SGLang | `--kv-cache-dtype fp8_e4m3` | `ValueError: unsupported SM121 QSA call: expected BF16 D=256, 12:1 GQA, TP1 24Q/2KV or TP2 12Q/1KV, bs<=128, and selected KV<=2055` | SM121 QSA attention kernel on GB10 had no dequant path for FP8 KV in this image, not a hardware limit (see section 12) | Use `--kv-cache-dtype auto` (BF16), revisited and resolved 2026-09-05 |
 | 10 | SGLang | Full final flag set (section 5), `--kv-cache-dtype auto` | none: serving | none | Serving since 2026-09-04 19:39 CDT (00:39 UTC on 2026-09-05) |
 
 ### 4a. FP8 128-block quantization vs. TP sharding arithmetic (attempt 6)
@@ -247,6 +247,9 @@ correctness concern even if the kernel had accepted the dtype. The upside forego
 BF16 KV is small: since only 12 of 48 layers carry attention KV in the first place (the rest are
 Gated-DeltaNet, with no KV cache to shrink), moving that fraction from BF16 to FP8 would have saved
 on the order of 1 GB, not a meaningful fraction of the roughly 94 GB weight footprint.
+
+This was revised on 2026-09-05: the SM121 QSA kernel's BF16-only constraint was a missing dequant
+path, not a hardware limit. See section 12.
 
 ### 4e. Why vLLM was abandoned rather than tuned further (attempts 1 through 5)
 
@@ -336,6 +339,10 @@ a non-DeepGEMM kernel, a CUDA `cudaErrorIllegalAddress` from the Cutlass block-s
 both pointing at a GB10-level gap in Tensor Memory Accelerator support for these two kernel
 implementations). Disabling DeepGEMM selection for this SGLang deployment avoids exercising that
 code path at all rather than hoping SGLang's own DeepGEMM integration is unaffected.
+
+`--kv-cache-dtype auto` (BF16) and `--context-length 65536` were the production values as of this
+section. Both changed on 2026-09-05: see section 12 for the FP8 KV cache patch and the promotion
+to 131,072 context.
 
 One more operational step, run at the top of `launch.sh` before every start: dropping the page
 cache (`sync && echo 3 > /proc/sys/vm/drop_caches`). This is defensive housekeeping against stale
@@ -504,10 +511,9 @@ discrete-GPU dashboard template.
 
 ## 10. Open questions and untested ideas
 
-- **FP8 KV on SM121.** Is the BF16-only constraint in section 4d a hard architectural limit of the
-  SM121 QSA kernel, or is there an unreleased or differently-shaped kernel variant that would
-  accept FP8 KV for this exact attention configuration (TP2, 12 query heads to 1 KV head, head
-  dimension 256)? Not investigated beyond the one error message.
+- **FP8 KV on SM121.** Answered on 2026-09-05: not a hard architectural limit, see section 12 for
+  the patch that resolves it. The remaining open question is calibrated KV scales, since the
+  checkpoint ships none and the patch defaults to a descale of 1.0.
 - **`--ple-offload-embedding`.** Its effect in this build could not be confirmed: measured weight
   footprint was about 94 GB resident either way, with or without expecting the embedding table to
   be offloaded. It may be a no-op in this SGLang build, or the offload may be happening without
@@ -533,7 +539,75 @@ discrete-GPU dashboard template.
   research pass and is listed in the sources below, but its own open question was never resolved
   by anyone, including this build. Left here for anyone following up.
 
-## 11. Sources
+## 12. FP8 KV cache, revisited (2026-09-05)
+
+Section 4d and section 10 both recorded FP8 KV cache as failing outright on the SM121 QSA kernel,
+with the checkpoint's missing KV scale factors noted as a separate concern that would have mattered
+even if the kernel had accepted the dtype. Both points turned out to be about a missing dequant
+path rather than a hardware ceiling.
+
+**The pointer.** Forum user jahnclawdmonet replied on NVIDIA Developer Forums thread 382435 (the
+thread covering this build, listed in section 11) pointing at upstream sglang PR #36644, "[Qwen3.8]
+Fix FP8 KV cache support in QSA" (author LingZ315, open and unreviewed at the time it was applied
+here, stacked on PR #36497, already validated upstream on RTX 5090 and RTX PRO 6000 with the NVFP4
+checkpoint). The diff is 879 lines, Python only, touching `qsa/kernel.py`, `qsa/sparse_attn.py`,
+`qwen_sparse_attn_backend.py`, and one test file. sha256 of the diff as applied here:
+`2730b1659fdc384ece80e8f51039fb950968a0e71e799b5f35283be0302c9fd5`.
+
+**Applying it.** The patch applied cleanly with `git apply` against this image's sglang commit
+(`g593134d17`), the same commit recorded in section 5. It was added to the build as a third patch
+step in `Dockerfile`, after the existing M-RoPE fix: the diff is copied into the build context,
+applied with `git apply`, and verified with a `grep -q k_scale` guard against `qsa/kernel.py` that
+fails the build if the patch did not land.
+
+**Mechanism.** The patch dequantizes the FP8 KV scratch into the query dtype with a per-layer
+descale factor before the SM121 QSA kernel call, rather than requiring the kernel to consume FP8
+directly. This is why the kernel's fixed shape list in section 4d (`TP1 24Q/2KV or TP2 12Q/1KV`)
+was never actually the FP8 blocker: the kernel still runs in BF16 internally, the KV cache storage
+just happens to be FP8 on either side of it. Since the checkpoint ships no KV scale factors, the
+descale defaults to 1.0, and the server logs the same "Using FP8 KV cache but no scaling factors
+provided. Defaulting to scaling factors of 1.0" message as before at startup, now informational
+rather than a precursor to the attempt-9 crash.
+
+**Test at 65,536 context.** With the patch applied and `--kv-cache-dtype fp8_e4m3` restored, the KV
+pool held 178,624 tokens (0.51 GB K plus 0.51 GB V), against 114,688 to 124,480 tokens under BF16
+at the same context (0.71 GB K plus 0.71 GB V each side). Benchmarked with thinking mode off and
+512-token completions: time to first token 0.17 to 0.18 s, single-stream 31.3 to 36.6 tok/s,
+4-stream aggregate 90.3 to 91.0 tok/s. Needle-in-context recall was correct at roughly 4.6K, 20.6K,
+and 52.2K prompt tokens, with no token-id-0 corruption observed in any test run.
+
+**Promotion to 131,072 context and the memory guard.** Given the roughly 33 percent smaller KV pool
+footprint at a given context (12 of 48 layers carry attention KV at all, per section 3, so the FP8
+savings apply only to that fraction), the natural next step was doubling context rather than
+banking the memory savings unused. At `--context-length 131072`, the KV pool holds 242,944 tokens
+(0.70 GB K plus 0.70 GB V), with 9.98 GB of available GPU memory remaining on the head node after
+CUDA graph capture, comfortably inside the memory floor discussed in section 4c and section 6.
+Weight load took 483.78 s, the MTP draft head 52.53 s, both consistent with the section 6 baseline.
+Needle recall was independently verified correct at 16,817, 101,066, and 125,596 prompt tokens.
+Measured throughput: single-stream 35.7 to 37.0 tok/s, 2-stream aggregate 59.4 tok/s, 4-stream
+aggregate 92.8 tok/s, time to first token 0.15 to 0.19 s, all neutral against the BF16 65K baseline
+in section 7. The KV pool re-sizes with `--context-length` at the same 0.90 `--mem-fraction-static`
+recorded in section 4c, with no other flag changed to reach this figure.
+
+**Promotion and rollback procedure.** Before rebuilding, the pre-patch image was retagged
+(`docker tag sglang-spark:fp8 sglang-spark:fp8-bf16kv`) and the pre-patch `launch.sh` kept as a
+backup, on both boxes. Reverting to BF16 KV at 65,536 context is a retag plus
+`systemctl restart sglang-cluster`, restoring the flags `--kv-cache-dtype auto` and
+`--context-length 65536` under the same `sglang-spark:fp8` tag the systemd unit expects, with no
+change to the unit file itself in either direction.
+
+**Descale caveat.** The 1.0 default descale is a known approximation, not a measured calibration:
+the checkpoint was never shipped with FP8 KV scale factors, so there is no calibrated value to fall
+back to short of computing one from the model's own activation statistics. This is recorded as the
+open question in section 10 going forward, in place of the resolved "is FP8 KV possible" question.
+
+**Benchmark-contention pitfall.** Running two benchmark clients against the same endpoint
+concurrently roughly halves both the per-client and the aggregate measured throughput. Every number
+in this section was captured with a single benchmark client running alone: a multi-stream figure
+(the "2 concurrent streams" and "4 concurrent streams" rows above) means multiple streams from one
+client, not multiple clients.
+
+## 13. Sources
 
 - NVIDIA Developer Forums thread 381428, "Qwen3.8 Flash Next NVFP4 on 2x DGX Spark, full
   multimodal, 70 tok/s peak, 47 typical":
@@ -553,3 +627,5 @@ discrete-GPU dashboard template.
 - NVIDIA Developer Forums thread on this run, "FP8 Qwen3.8-Flash-Next on 2x DGX Spark via
   SGLang: 37-40 tok/s":
   https://forums.developer.nvidia.com/t/fp8-qwen3-8-flash-next-on-2x-dgx-spark-via-sglang-37-40-tok-s/382435
+- Forum user jahnclawdmonet's reply on the thread above (2026-09-05), pointing at sglang PR #36644
+  for FP8 KV cache support: https://github.com/sgl-project/sglang/pull/36644
