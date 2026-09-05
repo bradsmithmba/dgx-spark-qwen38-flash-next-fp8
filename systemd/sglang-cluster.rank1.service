@@ -1,0 +1,29 @@
+# rank 0 (Spark #1) is the rendezvous master at HEAD_IP:29511 with
+# --dist-timeout 600 baked into launch.sh, so either node may start first.
+# Restart=always on both units means a single-node reboot (or process death)
+# re-rendezvous once the survivor's process dies on NCCL peer loss and its
+# own unit restarts it.
+[Unit]
+Description=SGLang dual-Spark cluster node (Qwen3.8-Flash-Next-FP8), rank 1
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=NODE_RANK=1
+Environment=IMAGE=sglang-spark:fp8
+# Create /etc/sglang-cluster.env with HEAD_IP=<head node interconnect address> (and optional MODEL_DIR, HF_CACHE)
+EnvironmentFile=-/etc/sglang-cluster.env
+ExecStartPre=-/usr/bin/docker stop sglang_node
+ExecStartPre=-/usr/bin/docker rm sglang_node
+ExecStart=/bin/bash /opt/sglang-cluster/launch.sh
+ExecStop=/usr/bin/docker stop -t 60 sglang_node
+Restart=always
+RestartSec=30
+TimeoutStartSec=900
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target
