@@ -15,7 +15,7 @@ SGLang, on the fifth attempt, worked. The cluster has been serving continuously 
 at 19:39 CDT (00:39 UTC on 2026-09-05) under a pair of systemd units, one per box, both restart-safe. Measured
 single-stream throughput is 36 to 41 tok/s (median 40.3), context is 65,536 tokens, and the KV
 cache is BF16 (FP8 KV was believed not possible on this GPU for this model at the time this
-section was written: this was revised on 2026-09-05, see section 12). That is roughly 15 to 21
+section was written: this was revised on 2026-09-05, see section 11). That is roughly 15 to 21
 percent slower than the community's best published NVFP4 numbers on the same hardware pair, at
 less than a quarter of the context length, in exchange for staying at 8-bit weights end to end.
 
@@ -190,7 +190,7 @@ the logs.
 | 6 | SGLang | TP2 only (no EP) | `ValueError: The output_size of gate's and up's weight = 320 is not divisible by weight quantization block_n = 128` | FP8 128-block quantization vs. tensor-parallel sharding arithmetic (see subsection below) | Add `--ep-size 2` |
 | 7 | SGLang | TP2/EP2, `NCCL_IB_GID_INDEX=3` pinned | `ibv_modify_qp failed with 61 No data available, on dev roceP2p1s0f1:1 ... local GID index 3, local GID ::` | GID index 3 exists only on `rocep1s0f1`, not its twin: pinning it breaks the expert-parallel NCCL communicator | Remove the `NCCL_IB_GID_INDEX` pin entirely, let NCCL auto-select |
 | 8 | SGLang | `--mem-fraction-static 0.80` | `Loaded weights leave no GPU memory for the KV cache under --mem-fraction-static=0.8. Raise --mem-fraction-static above 0.872 (minimum viable = 0.8714)` | Static weight footprint (about 94 GB main plus about 1.8 to 2.0 GB MTP draft) leaves too little of the roughly 119 GiB pool at 0.80 | Raise to `--mem-fraction-static 0.90` |
-| 9 | SGLang | `--kv-cache-dtype fp8_e4m3` | `ValueError: unsupported SM121 QSA call: expected BF16 D=256, 12:1 GQA, TP1 24Q/2KV or TP2 12Q/1KV, bs<=128, and selected KV<=2055` | SM121 QSA attention kernel on GB10 had no dequant path for FP8 KV in this image, not a hardware limit (see section 12) | Use `--kv-cache-dtype auto` (BF16), revisited and resolved 2026-09-05 |
+| 9 | SGLang | `--kv-cache-dtype fp8_e4m3` | `ValueError: unsupported SM121 QSA call: expected BF16 D=256, 12:1 GQA, TP1 24Q/2KV or TP2 12Q/1KV, bs<=128, and selected KV<=2055` | SM121 QSA attention kernel on GB10 had no dequant path for FP8 KV in this image, not a hardware limit (see section 11) | Use `--kv-cache-dtype auto` (BF16), revisited and resolved 2026-09-05 |
 | 10 | SGLang | Full final flag set (section 5), `--kv-cache-dtype auto` | none: serving | none | Serving since 2026-09-04 19:39 CDT (00:39 UTC on 2026-09-05) |
 
 ### 4a. FP8 128-block quantization vs. TP sharding arithmetic (attempt 6)
@@ -249,7 +249,7 @@ Gated-DeltaNet, with no KV cache to shrink), moving that fraction from BF16 to F
 on the order of 1 GB, not a meaningful fraction of the roughly 94 GB weight footprint.
 
 This was revised on 2026-09-05: the SM121 QSA kernel's BF16-only constraint was a missing dequant
-path, not a hardware limit. See section 12.
+path, not a hardware limit. See section 11.
 
 ### 4e. Why vLLM was abandoned rather than tuned further (attempts 1 through 5)
 
@@ -341,7 +341,7 @@ implementations). Disabling DeepGEMM selection for this SGLang deployment avoids
 code path at all rather than hoping SGLang's own DeepGEMM integration is unaffected.
 
 `--kv-cache-dtype auto` (BF16) and `--context-length 65536` were the production values as of this
-section. Both changed on 2026-09-05: see section 12 for the FP8 KV cache patch and the promotion
+section. Both changed on 2026-09-05: see section 11 for the FP8 KV cache patch and the promotion
 to 131,072 context.
 
 One more operational step, run at the top of `launch.sh` before every start: dropping the page
@@ -511,7 +511,7 @@ discrete-GPU dashboard template.
 
 ## 10. Open questions and untested ideas
 
-- **FP8 KV on SM121.** Answered on 2026-09-05: not a hard architectural limit, see section 12 for
+- **FP8 KV on SM121.** Answered on 2026-09-05: not a hard architectural limit, see section 11 for
   the patch that resolves it. The remaining open question is calibrated KV scales, since the
   checkpoint ships none and the patch defaults to a descale of 1.0.
 - **`--ple-offload-embedding`.** Its effect in this build could not be confirmed: measured weight
