@@ -4,7 +4,7 @@ Launch assets for running `Qwen/Qwen3.8-Flash-Next-FP8` across two NVIDIA DGX Sp
 
 Everything I could find on doing this used NVFP4 quantization. NVFP4 makes sense. It is smaller, it fits the 128 GB unified memory with room to spare, and the community has already done the work of tuning it. But...
 
-From all the testing I've done, while NVFP4 doesnt really nerf a model, it seems to be pretty detrimental to its ability to do long-reasoning, and that's what I really wqanted to preserve, so I wanted to do this with 8-bit quant. Qwen/Qwen3.8-Flash-Next-FP8 is 172.78 GiB across 131 safetensors shards: an ultra-sparse multimodal Mixture-of-Experts model, roughly 125B total parameters with 6B active per token, plus a separate 51B-parameter N-gram embedding table, at 262K native context. It won't fit on one Spark, but you can squeeze in onto two.
+From all the testing I've done, while NVFP4 doesnt really nerf a model, it seems to be pretty detrimental to its ability to do long-reasoning, and that's what I really wanted to preserve, so I wanted to do this with 8-bit quant. Qwen/Qwen3.8-Flash-Next-FP8 is 172.78 GiB across 131 safetensors shards: an ultra-sparse multimodal Mixture-of-Experts model, roughly 125B total parameters with 6B active per token, plus a separate 51B-parameter N-gram embedding table, at 262K native context. It won't fit on one Spark, but you can squeeze in onto two.
 
 ## The hardware, and the "twins"
 
