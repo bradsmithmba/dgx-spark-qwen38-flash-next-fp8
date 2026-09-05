@@ -1,3 +1,5 @@
+Posted 2026-09-04 in DGX Spark / GB10: https://forums.developer.nvidia.com/t/fp8-qwen3-8-flash-next-on-2x-dgx-spark-via-sglang-37-40-tok-s/382435
+
 FP8 Qwen3.8-Flash-Next on 2x DGX Spark via SGLang: 37-40 tok/s
 
 Every dual-Spark result I could find for this model uses the NVFP4 checkpoint (thread 381428: 47 tok/s typical on SGLang, TP2, MTP4 plus CUDA graphs). Nobody had posted numbers for the official FP8 release, and one thread (381440) asked directly and got no answer. So I ran it: two GB10 units, 128 GB unified memory each, one ConnectX-7 200G cable, no switch, SGLang (`lmsysorg/sglang:qwen38flashnext`) at TP2/EP2, `--kv-cache-dtype auto`.
@@ -15,4 +17,4 @@ Launch script, environment variables, and systemd setup for both nodes (14-minut
 
 Two questions for the room. Is the FP8-versus-NVFP4 quality gap worth what you give up in throughput and context, or is NVFP4 close enough that the official checkpoint is a curiosity? And has anyone gotten FP8 KV cache past the SM121 QSA kernel's shape constraints? The error reads like a kernel written for specific configurations, not a hard wall.
 
-Tags: dgx-spark, sglang, fp8, moe, quantization
+Tags: llm (the forum only accepts pre-existing tags)

@@ -550,3 +550,6 @@ discrete-GPU dashboard template.
   https://github.com/vllm-project/vllm/issues/54173
 - NVIDIA `dgx-spark-playbooks`, `connect-two-sparks` recipe (two-Spark cabling and bandwidth
   guidance): https://github.com/NVIDIA/dgx-spark-playbooks (under `nvidia/connect-two-sparks`)
+- NVIDIA Developer Forums thread on this run, "FP8 Qwen3.8-Flash-Next on 2x DGX Spark via
+  SGLang: 37-40 tok/s":
+  https://forums.developer.nvidia.com/t/fp8-qwen3-8-flash-next-on-2x-dgx-spark-via-sglang-37-40-tok-s/382435
